@@ -14,8 +14,8 @@
 2. Select **YouTube and YouTube Music**, include **history**, and create the export.
 3. Download and unzip the export. In Nextwatch, choose **Import or manage history**, then select `watch-history.json` or `watch-history.html`.
 
-Nextwatch prioritizes interests from recent activity and saved videos and excludes previously opened or imported videos while personalization is enabled. History, saved videos, and hidden videos are stored in the current browser.
+Nextwatch gives the strongest priority to creators you watch repeatedly. Topics from videos you rewatch count more than topics from one-off watches. Saved videos also help rank related picks, and already watched videos are excluded while personalization is enabled. Re-import your original Takeout file if you used an older version of Nextwatch, since older versions kept only one entry per video. History, saved videos, and hidden videos are stored in the current browser.
 
 ## Live search
 
-In **Settings**, add an optional browser-restricted YouTube Data API v3 key for live search results. Restrict the key to that API and to the app's HTTPS origin. The key stays in memory until page reload. Your explicit search terms are sent to YouTube. To send inferred topics, select the history search button.
+In **Settings**, add an optional browser-restricted YouTube Data API v3 key for live search results. Restrict the key to that API and to the app's HTTPS origin. The key stays in memory until page reload. Your explicit search terms are sent to YouTube. Use the history search button to find more from your most-watched creator or top topics. When the export includes a creator’s YouTube channel ID, this search fetches videos from that channel directly.
