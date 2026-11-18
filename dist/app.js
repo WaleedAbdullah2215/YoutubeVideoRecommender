@@ -25,7 +25,7 @@ const genres = ['Entertainment', 'Comedy', 'Vlogs', 'All', 'Science', 'Technolog
 const idPattern = /^[A-Za-z0-9_-]{11}$/;
 const $ = id => document.getElementById(id);
 const storageKey = 'nextwatch-v1';
-let data = { history: [], saved: [], hidden: [], creatorVotes: {}, creatorSetup: false, personalize: true };
+let data = { history: [], saved: [], hidden: [], creatorVotes: {}, creatorSeen: {}, personalize: true };
 try {
   const stored = JSON.parse(localStorage.getItem(storageKey));
   if (stored) data = { ...data, ...stored };
@@ -38,6 +38,7 @@ function persist() {
 
 let genre = 'Entertainment';
 let timeSlot = '';
+const newlyPicked = new Set();
 let query = '';
 let view = 'discover';
 let key = '';
@@ -131,7 +132,7 @@ function rank(videos, topic, selectedGenre, history, favorites = [], profile = p
         .sort((a, b) => b - a).slice(0, 3).reduce((sum, weight) => sum + weight, 0);
       const creatorBonus = creatorCount >= 2 ? 20 + 9 * Math.log2(creatorCount) : creatorCount;
       const vote = creatorVote(video);
-      const preference = vote === 'yes' ? 60 : creatorOf(video)?.starter ? 8 : 0;
+      const preference = vote === 'yes' ? 60 + (newlyPicked.has(video.channelId) ? 20 : 0) : creatorOf(video)?.starter ? 8 : 0;
       return { video, matches, interest, creatorCount, score: matches * 100 + preference + creatorBonus + Math.min(interest, 20) };
     })
     .filter(item => !topic || item.matches)
@@ -224,6 +225,26 @@ function historySearch(profile) {
   const term = [...profile.topics].sort((a, b) => b[1] - a[1]).slice(0, 3)
     .map(([word]) => word).join(' ');
   return { term };
+}
+function mixPickedCreators(ranked) {
+  const queues = new Map();
+  const others = [];
+  for (const item of ranked) {
+    const creator = creatorOf(item.video);
+    if (creatorVote(item.video) !== 'yes') {
+      others.push(item);
+      continue;
+    }
+    if (!queues.has(creator.id)) queues.set(creator.id, []);
+    queues.get(creator.id).push(item);
+  }
+  const mixed = [];
+  for (let round = 0; mixed.length < ranked.length - others.length; round++) {
+    for (const queue of queues.values()) {
+      if (queue[round]) mixed.push(queue[round]);
+    }
+  }
+  return [...mixed, ...others];
 }
 function recommendationReason({ video, creatorCount, interest }) {
   if (creatorVote(video) === 'yes') return 'Creator you picked';
@@ -404,7 +425,7 @@ async function refresh(creatorSearch = false) {
   const profile = profileFor(history, favorites);
   const ranked = rank(catalog, query, genre, history, favorites, profile);
   $('results-title').textContent = query ? 'Results for “' + query + '”' : !['All', 'Entertainment'].includes(genre) ? genre : 'Your next three';
-  const local = ranked.map(item => ({ video: item.video, reason: recommendationReason(item) }));
+  const local = (query ? ranked : mixPickedCreators(ranked)).map(item => ({ video: item.video, reason: recommendationReason(item) }));
   setPicks(local);
   const explicitTerm = [query, !['All', 'Entertainment'].includes(genre) ? genre : ''].filter(Boolean).join(' ');
   const selected = preferredCreators();
@@ -439,7 +460,7 @@ async function refresh(creatorSearch = false) {
     });
     const resultsToShow = explicitTerm
       ? [...extra.map(video => ({ video, reason: 'YouTube search' })), ...local]
-      : rank([...catalog, ...extra], '', genre, history, favorites, profile)
+      : mixPickedCreators(rank([...catalog, ...extra], '', genre, history, favorites, profile))
         .map(item => ({ video: item.video, reason: recommendationReason(item) }));
     setPicks(resultsToShow);
     $('status').textContent = resultsToShow.length ? '' : 'No unseen videos fit this time and filter.';
@@ -458,8 +479,25 @@ function updateCreatorSummary() {
   $('creator-summary').textContent = count ? count + (count === 1 ? ' creator picked' : ' creators picked')
     : 'Choose favorites once. History import is optional.';
 }
-function openCreatorPicker() {
-  const rows = creatorOptions.map(creator => {
+function suggestedCreators() {
+  const picked = preferredCreators();
+  const anchors = picked.length ? picked : creatorOptions.filter(creator => creator.starter);
+  const similarity = creator => Math.max(0, ...anchors.map(anchor => {
+    const keywords = tokens(anchor.tags);
+    return 3 * Number(creator.region === anchor.region) + 2 * Number(creator.genre === anchor.genre) +
+      tokens(creator.tags).filter(word => keywords.includes(word)).length;
+  }));
+  return creatorOptions.filter(creator => !data.creatorVotes[creator.id])
+    .map(creator => ({ creator, score: similarity(creator), seen: data.creatorSeen[creator.id] || 0 }))
+    .sort((a, b) => a.seen - b.seen || b.score - a.score)
+    .slice(0, 3).map(({ creator }) => creator);
+}
+function openCreatorPicker(creators = creatorOptions, discovery = false) {
+  $('creators-title').textContent = discovery ? 'Try these creators?' : 'Who do you enjoy watching?';
+  $('creators-help').textContent = discovery
+    ? 'Say Yes to add their videos to your picks, or No to skip the creator. You can also choose Done.'
+    : 'Choose Yes or No for any creator. Your choices are saved on this device.';
+  const rows = creators.map(creator => {
     const row = node('div', 'creator-row');
     const details = node('div');
     details.append(node('strong', '', creator.name), node('small', '', creator.region + ' · ' + creator.style));
@@ -473,6 +511,8 @@ function openCreatorPicker() {
       button.onclick = () => {
         if (data.creatorVotes[creator.id] === vote) delete data.creatorVotes[creator.id];
         else data.creatorVotes[creator.id] = vote;
+        if (data.creatorVotes[creator.id] === 'yes') newlyPicked.add(creator.id);
+        else newlyPicked.delete(creator.id);
         persist();
         update();
         updateCreatorSummary();
@@ -486,12 +526,8 @@ function openCreatorPicker() {
   $('creator-list').replaceChildren(...rows);
   $('creators-dialog').showModal();
 }
-$('creators').onclick = openCreatorPicker;
-$('creators-dialog').addEventListener('close', () => {
-  data.creatorSetup = true;
-  persist();
-  refresh();
-});
+$('creators').onclick = () => openCreatorPicker();
+$('creators-dialog').addEventListener('close', () => refresh());
 updateCreatorSummary();
 timeOptions.forEach(option => {
   const button = node('button', '', option.label);
@@ -499,8 +535,7 @@ timeOptions.forEach(option => {
   button.onclick = () => {
     timeSlot = option.id;
     Array.from($('time-options').children).forEach(chip => chip.setAttribute('aria-pressed', String(chip === button)));
-    if (!data.creatorSetup) openCreatorPicker();
-    else refresh();
+    refresh();
   };
   $('time-options').append(button);
 });
@@ -590,3 +625,9 @@ $('remove-key').onclick = () => {
   refresh();
 };
 refresh();
+const suggestions = suggestedCreators();
+if (suggestions.length) {
+  for (const creator of suggestions) data.creatorSeen[creator.id] = (data.creatorSeen[creator.id] || 0) + 1;
+  persist();
+  openCreatorPicker(suggestions, true);
+}

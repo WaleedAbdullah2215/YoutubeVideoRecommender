@@ -5,12 +5,12 @@
 ## Find something to watch during a break
 
 1. Choose **1–20 mins**, **20–40 mins**, or **More than 40 mins**. A video exactly 20 minutes long goes in the first group. A video exactly 40 minutes long goes in the second.
-2. On your first visit, pick **Yes** or **No** for any of the suggested creators. You can skip individual creators or select **Done** to get started without voting. **Pick creators** lets you change your answers at any time.
+2. When you open Nextwatch, it suggests up to three similar creators you haven't voted on. Say **Yes** to add them to your picks, **No** to skip them, or **Done** to continue. **Pick creators** lets you change your answers at any time. Suggestions pause once you have voted on the whole collection.
 3. Choose **Watch** on one of the three picks to open YouTube. **More picks** shows another set. Genre and topic filters are optional.
 
 The default Entertainment feed emphasizes Pakistani and Indian comedy, vlogs, and food, alongside international group challenges. Yes boosts a creator and No excludes them from Discover. The app shows fewer than three picks if fewer videos fit. Starter video titles and runtimes come from the creators’ public YouTube upload listings.
 
-Creator preferences, saved videos, hidden videos, and activity from links you open in Nextwatch are stored in your browser. Pick creators once and choose your available time each visit.
+Creator preferences, saved videos, hidden videos, and activity from links you open in Nextwatch are stored in your browser. Your answers carry over between visits. Choose your available time each visit.
 
 ## Optional watch history
 
