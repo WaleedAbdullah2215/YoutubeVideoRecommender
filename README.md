@@ -1,21 +1,21 @@
 # Nextwatch
 
-[Open the hosted app](https://nextwatch-video-discovery.observantmesa.chatgpt.site), or clone this repository and open `dist/index.html` in your browser. There’s no build step.
+[Open the private hosted app](https://nextwatch-video-discovery.observantmesa.chatgpt.site), or clone this repository and open `dist/index.html` in your browser. There’s no build step.
 
-## Find your next watch
+## Find something to watch during a break
 
-- Discover shows three picks when at least three matches are available. **Watch** opens the video on YouTube and records the selection in your local history. **More picks** moves to the next set.
-- **Save** adds a video to your library and gives similar videos more weight when personalization is enabled. **Hide** removes a video from your picks. You can restore hidden videos from the history dialog.
-- Select a genre, enter a specific topic, or combine both. Searches with fewer than three matches show the matches available. A YouTube search link covers topics beyond the built-in collection.
+1. Choose **1–20 mins**, **20–40 mins**, or **More than 40 mins**. A video exactly 20 minutes long goes in the first group. A video exactly 40 minutes long goes in the second.
+2. On your first visit, pick **Yes** or **No** for any of the suggested creators. You can skip individual creators or select **Done** to get started without voting. **Pick creators** lets you change your answers at any time.
+3. Choose **Watch** on one of the three picks to open YouTube. **More picks** shows another set. Genre and topic filters are optional.
 
-## Personalize it with your YouTube history
+The default Entertainment feed emphasizes Pakistani and Indian comedy, vlogs, and food, alongside international group challenges. Yes boosts a creator and No excludes them from Discover. The app shows fewer than three picks if fewer videos fit. Starter video titles and runtimes come from the creators’ public YouTube upload listings.
 
-1. Open [Google Takeout](https://takeout.google.com/) in the Google account you use for YouTube.
-2. Select **YouTube and YouTube Music**, include **history**, and create the export.
-3. Download and unzip the export. In Nextwatch, choose **Import or manage history**, then select `watch-history.json` or `watch-history.html`.
+Creator preferences, saved videos, hidden videos, and activity from links you open in Nextwatch are stored in your browser. Pick creators once and choose your available time each visit.
 
-Nextwatch gives the strongest priority to creators you watch repeatedly. Topics from videos you rewatch count more than topics from one-off watches. Saved videos also help rank related picks, and already watched videos are excluded while personalization is enabled. Re-import your original Takeout file if you used an older version of Nextwatch, since older versions kept only one entry per video. History, saved videos, and hidden videos are stored in the current browser.
+## Optional watch history
 
-## Live search
+YouTube's [Data API does not expose watch history](https://developers.google.com/youtube/data/revision_history). If you'd like to seed your preferences with past activity, export **YouTube and YouTube Music** history from [Google Takeout](https://takeout.google.com/), unzip it, and use **Import or manage history** to select `watch-history.json` or `watch-history.html`. No regular import is needed. Nextwatch weights repeat watches and frequent creators and excludes watched videos when personalization is enabled.
 
-In **Settings**, add an optional browser-restricted YouTube Data API v3 key for live search results. Restrict the key to that API and to the app's HTTPS origin. The key stays in memory until page reload. Your explicit search terms are sent to YouTube. Use the history search button to find more from your most-watched creator or top topics. When the export includes a creator’s YouTube channel ID, this search fetches videos from that channel directly.
+## Optional live search
+
+Add a browser-restricted YouTube Data API v3 key in **Settings**. Restrict it to the API and the hosted site's HTTPS origin. The key stays in memory until page reload. Topic and genre searches send those terms to YouTube. **Find more from my creators** can fetch uploads from up to three selected channels. The app checks [YouTube’s reported runtime](https://developers.google.com/youtube/data/reference/rest/v3/videos#contentDetails.duration) before displaying each live result.

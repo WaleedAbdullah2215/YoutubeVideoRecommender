@@ -1,6 +1,6 @@
 'use strict';
 
-const catalog = [
+const generalCatalog = [
   ['JtUAAXe_0VI', 'The Egg · A Short Story', 'Kurzgesagt', 'Science', 'animation philosophy life universe'],
   ['aircAruvnKk', 'But what is a neural network?', '3Blue1Brown', 'Technology', 'ai machine learning math deep learning tutorial'],
   ['N5vJSNXPEwA', 'Can you solve the prisoner hat riddle?', 'TED-Ed', 'Learning', 'logic puzzle math'],
@@ -20,11 +20,12 @@ const catalog = [
   ['ce9nt7FULJ8', 'Gordon Ramsay Is Making Scrambled Eggs Around the World', 'Gordon Ramsay', 'Food', 'eggs breakfast cooking recipe']
 ].map(([id, title, channel, genre, tags]) => ({ id, title, channel, genre, tags }));
 
-const genres = ['All', 'Science', 'Technology', 'Learning', 'Music', 'Gaming', 'Travel', 'Food', 'History'];
+const catalog = [...entertainmentCatalog, ...generalCatalog.map(video => ({ ...video, seconds: generalRuntimes[video.id] }))];
+const genres = ['Entertainment', 'Comedy', 'Vlogs', 'All', 'Science', 'Technology', 'Learning', 'Music', 'Gaming', 'Travel', 'Food', 'History'];
 const idPattern = /^[A-Za-z0-9_-]{11}$/;
 const $ = id => document.getElementById(id);
 const storageKey = 'nextwatch-v1';
-let data = { history: [], saved: [], hidden: [], personalize: true };
+let data = { history: [], saved: [], hidden: [], creatorVotes: {}, creatorSetup: false, personalize: true };
 try {
   const stored = JSON.parse(localStorage.getItem(storageKey));
   if (stored) data = { ...data, ...stored };
@@ -35,7 +36,8 @@ function persist() {
   catch { storageFailed = true; }
 }
 
-let genre = 'All';
+let genre = 'Entertainment';
+let timeSlot = '';
 let query = '';
 let view = 'discover';
 let key = '';
@@ -44,6 +46,18 @@ let importSequence = 0;
 let page = 0;
 let picks = [];
 const pageSize = 3;
+const timeOptions = [
+  { id: 'quick', label: '1–20 mins', includes: seconds => seconds >= 60 && seconds <= 1200 },
+  { id: 'meal', label: '20–40 mins', includes: seconds => seconds > 1200 && seconds <= 2400 },
+  { id: 'long', label: 'More than 40 mins', includes: seconds => seconds > 2400 }
+];
+function fitsTime(video) {
+  return timeOptions.find(option => option.id === timeSlot)?.includes(video.seconds) ?? false;
+}
+function runtimeLabel(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  return minutes + ':' + String(seconds % 60).padStart(2, '0');
+}
 const searchCache = new Map();
 const stopWords = new Set('the a an to of in for and or with how this that it is are can you your watched watch video videos lets from by on at'.split(' '));
 function tokens(value) {
@@ -57,6 +71,18 @@ function wordsFor(video) {
 const catalogById = new Map(catalog.map(video => [video.id, video]));
 const channelIdPattern = /^UC[A-Za-z0-9_-]{22}$/;
 const creatorKey = name => (name || '').normalize('NFKC').trim().toLowerCase();
+const creatorByName = new Map(creatorOptions.flatMap(creator =>
+  [creator.name, creator.channel].map(name => [creatorKey(name), creator])));
+const creatorById = new Map(creatorOptions.map(creator => [creator.id, creator]));
+function creatorOf(video) {
+  return creatorById.get(video.channelId) || creatorByName.get(creatorKey(video.channel));
+}
+function creatorVote(video) {
+  return data.creatorVotes[creatorOf(video)?.id];
+}
+function preferredCreators() {
+  return creatorOptions.filter(creator => data.creatorVotes[creator.id] === 'yes');
+}
 
 function topicsFor(video) {
   return tokens([video.title, video.genre, video.tags].filter(Boolean).join(' '));
@@ -95,7 +121,8 @@ function rank(videos, topic, selectedGenre, history, favorites = [], profile = p
   const saved = new Set(favorites.map(video => video.id));
   const creatorIds = new Map([...profile.creators.values()].filter(creator => creator.id)
     .map(creator => [creator.id, creator]));
-  return videos.filter(video => (selectedGenre === 'All' || video.genre === selectedGenre) && !seen.has(video.id) && !data.hidden.includes(video.id) && !saved.has(video.id))
+  return videos.filter(video => fitsTime(video) && (selectedGenre === 'All' || video.genre === selectedGenre ||
+    (selectedGenre === 'Entertainment' && video.entertainment)) && creatorVote(video) !== 'no' && !seen.has(video.id) && !data.hidden.includes(video.id) && !saved.has(video.id))
     .map(video => {
       const words = wordsFor(video);
       const matches = wanted.filter(word => words.includes(word)).length;
@@ -103,7 +130,9 @@ function rank(videos, topic, selectedGenre, history, favorites = [], profile = p
       const interest = topicsFor(video).map(word => profile.topics.get(word) || 0)
         .sort((a, b) => b - a).slice(0, 3).reduce((sum, weight) => sum + weight, 0);
       const creatorBonus = creatorCount >= 2 ? 20 + 9 * Math.log2(creatorCount) : creatorCount;
-      return { video, matches, interest, creatorCount, score: matches * 80 + creatorBonus + Math.min(interest, 20) };
+      const vote = creatorVote(video);
+      const preference = vote === 'yes' ? 60 : creatorOf(video)?.starter ? 8 : 0;
+      return { video, matches, interest, creatorCount, score: matches * 100 + preference + creatorBonus + Math.min(interest, 20) };
     })
     .filter(item => !topic || item.matches)
     .sort((a, b) => b.score - a.score);
@@ -197,6 +226,7 @@ function historySearch(profile) {
   return { term };
 }
 function recommendationReason({ video, creatorCount, interest }) {
+  if (creatorVote(video) === 'yes') return 'Creator you picked';
   if (creatorCount >= 2) return 'Creator you watch often';
   return interest ? 'Related to your history or saves' : video.genre || 'YouTube';
 }
@@ -229,7 +259,7 @@ function renderCards(items) {
     img.alt = '';
     img.src = 'https://i.ytimg.com/vi/' + video.id + '/hqdefault.jpg';
     img.addEventListener('error', () => img.remove(), { once: true });
-    link.append(img, node('span', '', '▶ YouTube'));
+    link.append(img, node('span', 'runtime', video.seconds ? runtimeLabel(video.seconds) : '▶ YouTube'));
     const body = node('div', 'card-body');
     const title = node('h3');
     title.append(watchLink(video, video.title));
@@ -301,6 +331,24 @@ function decode(value) {
   const safe = value.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   return new DOMParser().parseFromString(safe, 'text/html').body.textContent;
 }
+function parseDuration(value) {
+  const parts = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value || '');
+  if (!parts) return 0;
+  const [, days = 0, hours = 0, minutes = 0, seconds = 0] = parts;
+  return days * 86400 + hours * 3600 + minutes * 60 + Number(seconds);
+}
+async function youtubeRequest(resource, params, signal) {
+  const response = await fetch('https://www.googleapis.com/youtube/v3/' + resource + '?' + new URLSearchParams(params), {
+    headers: { 'X-Goog-Api-Key': key }, signal
+  });
+  if (!response.ok) {
+    const message = response.status === 403 ? 'YouTube rejected the key or its quota was reached.'
+      : response.status === 400 ? 'YouTube could not use this API key or search.'
+      : 'YouTube search is temporarily unavailable.';
+    throw new Error(message);
+  }
+  return response.json();
+}
 async function liveSearch(term, signal, channelId) {
   const cacheKey = channelId || term;
   if (searchCache.has(cacheKey)) return searchCache.get(cacheKey);
@@ -310,24 +358,23 @@ async function liveSearch(term, signal, channelId) {
     params.set('channelId', channelId);
     params.set('order', 'date');
   }
-  const response = await fetch('https://www.googleapis.com/youtube/v3/search?' + params, {
-    headers: { 'X-Goog-Api-Key': key }, signal
-  });
-  if (!response.ok) {
-    const message = response.status === 403 ? 'YouTube rejected the key or its quota was reached.'
-      : response.status === 400 ? 'YouTube could not use this API key or search.'
-      : 'YouTube search is temporarily unavailable.';
-    throw new Error(message);
-  }
-  const payload = await response.json();
-  const videos = payload.items.filter(item => idPattern.test(item.id?.videoId || '') && item.snippet)
-    .map(item => ({ id: item.id.videoId, title: decode(item.snippet.title), channel: decode(item.snippet.channelTitle), channelId: item.snippet.channelId }));
+  const payload = await youtubeRequest('search', params, signal);
+  const ids = payload.items.filter(item => idPattern.test(item.id?.videoId || '')).map(item => item.id.videoId);
+  if (!ids.length) return [];
+  const details = await youtubeRequest('videos', { part: 'snippet,contentDetails', id: ids.join(',') }, signal);
+  const videosById = new Map(details.items
+    .filter(item => item.snippet?.liveBroadcastContent === 'none')
+    .map(item => [item.id, {
+      id: item.id, title: decode(item.snippet.title), channel: decode(item.snippet.channelTitle),
+      channelId: item.snippet.channelId, seconds: parseDuration(item.contentDetails?.duration), entertainment: true
+    }]));
+  const videos = ids.map(id => videosById.get(id)).filter(Boolean);
   if (searchCache.size >= 30) searchCache.clear();
   searchCache.set(cacheKey, videos);
   return videos;
 }
 
-async function refresh(allowHistorySearch = false) {
+async function refresh(creatorSearch = false) {
   request?.abort();
   request = new AbortController();
   const { signal } = request;
@@ -346,42 +393,56 @@ async function refresh(allowHistorySearch = false) {
     if (!data.saved.length) $('status').textContent = 'Save a video from Discover to find it here later.';
     return;
   }
+  if (!timeSlot) {
+    $('results-title').textContent = 'Your next three';
+    $('status').textContent = 'Choose how much time you have to see your picks.';
+    setPicks([]);
+    return;
+  }
   const history = data.personalize ? data.history : [];
   const favorites = data.personalize ? data.saved : [];
   const profile = profileFor(history, favorites);
   const ranked = rank(catalog, query, genre, history, favorites, profile);
-  $('results-title').textContent = query ? 'Results for “' + query + '”' : genre !== 'All' ? genre : 'Your next three';
+  $('results-title').textContent = query ? 'Results for “' + query + '”' : !['All', 'Entertainment'].includes(genre) ? genre : 'Your next three';
   const local = ranked.map(item => ({ video: item.video, reason: recommendationReason(item) }));
   setPicks(local);
-  const explicitTerm = [query, genre !== 'All' ? genre : ''].filter(Boolean).join(' ');
-  const inferred = explicitTerm ? {} : historySearch(profile);
-  const term = explicitTerm || (allowHistorySearch ? inferred.term : '');
-  if (!local.length) $('status').textContent = history.length || data.hidden.length
-    ? 'No unseen matches in the built-in collection. Try another topic or genre.'
-    : 'No matches in the built-in collection. Try another topic or search on YouTube.';
-  else if (data.personalize && !history.length) $('status').textContent = 'Import history or open a video to start personalizing.';
+  const explicitTerm = [query, !['All', 'Entertainment'].includes(genre) ? genre : ''].filter(Boolean).join(' ');
+  const selected = preferredCreators();
+  const inferred = explicitTerm ? {} : selected.length
+    ? { term: selected[0].name, channelId: selected[0].id }
+    : historySearch(profile);
+  const term = explicitTerm || (creatorSearch ? inferred.term : '');
+  if (!local.length) $('status').textContent = 'No unseen videos fit this time and filter. Try another duration or topic.';
   if (inferred.term && !term) {
-    const more = node('button', 'outline', inferred.channelId ? 'Find more from ' + inferred.term : 'Use my history to find more');
+    const more = node('button', 'outline', selected.length > 1 ? 'Find more from my creators'
+      : inferred.channelId ? 'Find more from ' + inferred.term : 'Find more like my history');
     more.onclick = () => refresh(true);
     $('fallback').append(more);
+  } else if (creatorSearch && selected.length > 1) {
+    selected.slice(0, 3).forEach(creator => fallback(creator.name, creator.id));
   } else if (term) fallback(term, inferred.channelId);
   if (!key || !term) return;
   $('status').textContent = 'Searching YouTube…';
   try {
-    const results = await liveSearch(term, signal, inferred.channelId);
+    const requests = creatorSearch && selected.length
+      ? selected.slice(0, 3).map(creator => liveSearch(creator.name, signal, creator.id))
+      : [liveSearch(term, signal, inferred.channelId)];
+    const settled = await Promise.allSettled(requests);
+    if (settled.every(result => result.status === 'rejected')) throw settled[0].reason;
+    const results = settled.flatMap(result => result.status === 'fulfilled' ? result.value : []);
     if (signal.aborted) return;
     const ids = new Set([...history.map(video => video.id), ...favorites.map(video => video.id), ...data.hidden, ...local.map(item => item.video.id)]);
     const extra = results.filter(video => {
-      if (ids.has(video.id)) return false;
+      if (ids.has(video.id) || !fitsTime(video) || creatorVote(video) === 'no') return false;
       ids.add(video.id);
       return true;
     });
     const resultsToShow = explicitTerm
       ? [...extra.map(video => ({ video, reason: 'YouTube search' })), ...local]
-      : rank([...catalog, ...extra], '', 'All', history, favorites, profile)
+      : rank([...catalog, ...extra], '', genre, history, favorites, profile)
         .map(item => ({ video: item.video, reason: recommendationReason(item) }));
     setPicks(resultsToShow);
-    $('status').textContent = local.length + extra.length ? '' : 'No unseen videos matched. Try different search terms.';
+    $('status').textContent = resultsToShow.length ? '' : 'No unseen videos fit this time and filter.';
   } catch (error) {
     if (!signal.aborted) $('status').textContent = error.message + ' You can still use the collection or open the search on YouTube.';
   }
@@ -392,6 +453,57 @@ function renderHistory() {
   $('clear-history').disabled = !data.history.length;
   $('reset-hidden').disabled = !data.hidden.length;
 }
+function updateCreatorSummary() {
+  const count = preferredCreators().length;
+  $('creator-summary').textContent = count ? count + (count === 1 ? ' creator picked' : ' creators picked')
+    : 'Choose favorites once. History import is optional.';
+}
+function openCreatorPicker() {
+  const rows = creatorOptions.map(creator => {
+    const row = node('div', 'creator-row');
+    const details = node('div');
+    details.append(node('strong', '', creator.name), node('small', '', creator.region + ' · ' + creator.style));
+    const actions = node('div');
+    const update = () => Array.from(actions.children).forEach(button =>
+      button.setAttribute('aria-pressed', String(data.creatorVotes[creator.id] === button.dataset.vote)));
+    for (const vote of ['yes', 'no']) {
+      const button = node('button', '', vote === 'yes' ? 'Yes' : 'No');
+      button.dataset.vote = vote;
+      button.setAttribute('aria-label', button.textContent + ' to ' + creator.name);
+      button.onclick = () => {
+        if (data.creatorVotes[creator.id] === vote) delete data.creatorVotes[creator.id];
+        else data.creatorVotes[creator.id] = vote;
+        persist();
+        update();
+        updateCreatorSummary();
+      };
+      actions.append(button);
+    }
+    update();
+    row.append(details, actions);
+    return row;
+  });
+  $('creator-list').replaceChildren(...rows);
+  $('creators-dialog').showModal();
+}
+$('creators').onclick = openCreatorPicker;
+$('creators-dialog').addEventListener('close', () => {
+  data.creatorSetup = true;
+  persist();
+  refresh();
+});
+updateCreatorSummary();
+timeOptions.forEach(option => {
+  const button = node('button', '', option.label);
+  button.setAttribute('aria-pressed', 'false');
+  button.onclick = () => {
+    timeSlot = option.id;
+    Array.from($('time-options').children).forEach(chip => chip.setAttribute('aria-pressed', String(chip === button)));
+    if (!data.creatorSetup) openCreatorPicker();
+    else refresh();
+  };
+  $('time-options').append(button);
+});
 genres.forEach(value => {
   const button = node('button', '', value);
   button.setAttribute('aria-pressed', String(value === genre));
